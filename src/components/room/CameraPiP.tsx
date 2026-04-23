@@ -30,8 +30,15 @@ export const CameraPiP = ({ trackRef }: { trackRef?: TrackReferenceOrPlaceholder
       style={{ right: pos.x, bottom: pos.y }}
       className="absolute z-30 h-[90px] w-[160px] cursor-grab overflow-hidden rounded-xl border-2 border-white/30 bg-black shadow-2xl active:cursor-grabbing"
     >
-      {trackRef?.publication?.track ? (
-        <VideoTrack trackRef={trackRef} className="h-full w-full object-cover" />
+      {trackRef && trackRef.publication?.track ? (
+        <VideoTrack
+          trackRef={{
+            participant: trackRef.participant,
+            source: trackRef.source,
+            publication: trackRef.publication,
+          }}
+          className="h-full w-full object-cover"
+        />
       ) : (
         <div className="flex h-full w-full items-center justify-center text-[10px] text-room-muted">
           Camera off

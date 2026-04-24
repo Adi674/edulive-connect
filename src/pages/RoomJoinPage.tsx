@@ -16,6 +16,7 @@ interface JoinState {
     token: string;
     classroom_id: string;
     classroom_title: string;
+    can_publish: boolean; // Added this
   };
 }
 
@@ -43,6 +44,7 @@ const RoomJoinPage = () => {
             token: res.token,
             classroom_id: res.classroom_id,
             classroom_title: res.classroom_title,
+            can_publish: res.can_publish, // Added this
           },
         });
       } catch (e) {
@@ -102,7 +104,12 @@ const RoomJoinPage = () => {
   }
 
   return (
-    <LiveKitRoom serverUrl={LIVEKIT_URL} token={token} connect data-lk-theme="default">
+    <LiveKitRoom
+      serverUrl={LIVEKIT_URL}
+      token={token}
+      connect={true}
+      data-lk-theme="default"
+    >
       <RoomAudioRenderer />
       {isTeacher
         ? <TeacherRoom classroomId={classroom_id} title={classroom_title} />

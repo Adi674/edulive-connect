@@ -1,8 +1,9 @@
+@import "@livekit/components-styles";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-@import "@livekit/components-styles";
 
 /* EduLive Design System
    Public pages: light. Room UI: dark.
@@ -72,6 +73,7 @@
   * {
     @apply border-border;
   }
+
   body {
     @apply bg-background text-foreground;
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
@@ -83,19 +85,37 @@
   background: hsl(var(--room-bg));
   color: hsl(var(--room-text));
 }
-.room-surface { background: hsl(var(--room-surface)); }
+
+.room-surface {
+  background: hsl(var(--room-surface));
+}
+
 .room-tile {
   background: hsl(var(--room-tile));
   border: 1px solid hsl(var(--room-tile-border));
 }
-.room-toolbar { background: hsl(var(--room-toolbar)); }
-.text-room-muted { color: hsl(var(--room-text-muted)); }
+
+.room-toolbar {
+  background: hsl(var(--room-toolbar));
+}
+
+.text-room-muted {
+  color: hsl(var(--room-text-muted));
+}
 
 /* Speaking ring animation */
 @keyframes speaking-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 hsl(var(--speaking) / 0.6), 0 0 0 2px hsl(var(--speaking)); }
-  50% { box-shadow: 0 0 0 8px hsl(var(--speaking) / 0), 0 0 0 2px hsl(var(--speaking)); }
+
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 hsl(var(--speaking) / 0.6), 0 0 0 2px hsl(var(--speaking));
+  }
+
+  50% {
+    box-shadow: 0 0 0 8px hsl(var(--speaking) / 0), 0 0 0 2px hsl(var(--speaking));
+  }
 }
+
 .speaking-ring {
   animation: speaking-pulse 1.4s ease-in-out infinite;
   border-color: hsl(var(--speaking)) !important;
@@ -103,10 +123,22 @@
 
 /* Live badge blink */
 @keyframes live-blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.55; }
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.55;
+  }
 }
-.live-badge { animation: live-blink 1.4s ease-in-out infinite; }
+
+.live-badge {
+  animation: live-blink 1.4s ease-in-out infinite;
+}
 
 /* Active speaker float */
-.active-speaker { order: -1; }
+.active-speaker {
+  order: -1;
+}

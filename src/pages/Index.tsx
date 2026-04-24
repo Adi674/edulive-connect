@@ -17,8 +17,8 @@ const Index = () => {
             <span>Contact</span>
           </nav>
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="sm" disabled>Login</Button>
-            <Button size="sm" disabled>Register</Button>
+            <Link to="/login"><Button variant="ghost" size="sm">Login</Button></Link>
+            <Link to="/register"><Button size="sm">Register</Button></Link>
           </div>
         </div>
       </header>

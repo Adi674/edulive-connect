@@ -3,7 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { LiveKitRoom, RoomAudioRenderer } from "@livekit/components-react";
 import { Loader2 } from "lucide-react";
 import { joinClassroom, LIVEKIT_URL, ApiError, isMockMode } from "@/lib/api";
-import { ensureMockSession, getRole } from "@/lib/auth";
+import { ensureMockSession, getRole, getSession } from "@/lib/auth";
 import { StudentRoom } from "@/components/room/StudentRoom";
 import { TeacherRoom } from "@/components/room/TeacherRoom";
 import { Button } from "@/components/ui/button";
@@ -26,6 +26,12 @@ const RoomJoinPage = () => {
   const [state, setState] = useState<JoinState>({ status: "loading" });
 
   useEffect(() => {
+    // Auth guard: real backend requires a session
+    if (!isMockMode && !getSession()) {
+      navigate(`/login?redirect=/room/${joinToken}`);
+      return;
+    }
+
     // Phase 1 dev convenience: ensure a session exists in mock mode
     if (isMockMode && !getRole()) {
       const role = new URLSearchParams(window.location.search).get("role") === "teacher"

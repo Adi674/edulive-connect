@@ -9,6 +9,7 @@ import { ChatPanel } from "./ChatPanel";
 import { ParticipantTile } from "./ParticipantTile";
 import { RoomTopBar } from "./RoomTopBar";
 import { leaveClassroom } from "@/lib/api";
+import { useMicPermissionSync } from "@/hooks/usemicpermissionsync";
 import { toast } from "sonner";
 
 interface Props {
@@ -21,6 +22,10 @@ export const StudentRoom = ({ classroomId, title }: Props) => {
   const participants = useParticipants();
   const { localParticipant } = useLocalParticipant();
   const [chatOpen, setChatOpen] = useState(false);
+
+  // Phase 4: Subscribe to SSE events so mic grant/revoke is instant
+  // without the student needing to manually poll or rejoin.
+  useMicPermissionSync({ classroomId, enabled: true });
 
   // Ensure local participant tile renders even before any tracks publish
   const sorted = [

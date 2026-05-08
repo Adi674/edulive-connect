@@ -74,6 +74,60 @@ export const openMics = (classroomId: string) =>
 export const closeMics = (classroomId: string) =>
   api.post<{ message: string }>(`/classrooms/${classroomId}/mic/close`);
 
+// ---------- Phase 3: Individual mic control ----------
+
+export const grantStudentMic = (classroomId: string, studentId: string) =>
+  api.post<{ message: string; student_id: string }>(
+    `/classrooms/${classroomId}/mic/grant/${studentId}`
+  );
+
+export const revokeStudentMic = (classroomId: string, studentId: string) =>
+  api.post<{ message: string; student_id: string }>(
+    `/classrooms/${classroomId}/mic/revoke/${studentId}`
+  );
+
+export interface StudentMicStatus {
+  student_id: string;
+  name: string;
+  email: string;
+  mic_granted: boolean;
+}
+
+export const getMicStatus = (classroomId: string) =>
+  api.get<StudentMicStatus[]>(`/classrooms/${classroomId}/mic/status`);
+
+// ---------- Phase 3: Token refresh ----------
+
+export interface TokenRefreshResponse {
+  token: string;
+  can_publish: boolean;
+  can_publish_audio: boolean;
+}
+
+export const refreshToken = (classroomId: string) =>
+  api.get<TokenRefreshResponse>(`/classrooms/${classroomId}/token/refresh`);
+
+// ---------- Phase 4: SSE events URL ----------
+
+/**
+ * Returns the full URL for the SSE events endpoint for a classroom.
+ * Returns null in mock/demo mode (no API_URL configured).
+ *
+ * The EventSource will connect to:
+ *   GET /api/v1/classrooms/{classroomId}/events
+ *
+ * The backend pushes events:
+ *   - event: "mic_granted"  data: {"student_id": "..."}
+ *   - event: "mic_revoked"  data: {"student_id": "..."}
+ *   - event: "ping"         data: {}  (keepalive every ~25s)
+ */
+export function getClassroomEventsUrl(classroomId: string): string | null {
+  if (!API_URL) return null;
+  return `${API_URL}/classrooms/${classroomId}/events`;
+}
+
+// ---------- Participants ----------
+
 export interface ParticipantOut {
   id: string;
   name: string;
@@ -84,20 +138,45 @@ export interface ParticipantOut {
 export const getParticipants = (classroomId: string) =>
   api.get<ParticipantOut[]>(`/classrooms/${classroomId}/participants`);
 
-// ---------- Mock backend (Phase 1, no FastAPI configured) ----------
+// ---------- Mock backend (no FastAPI configured) ----------
 
 const mockState = {
   micsOpen: new Map<string, boolean>(),
+  micGranted: new Map<string, boolean>(), // classroomId -> granted for current user
 };
+
+// Expose mock helpers on window for manual testing in the browser console:
+// window.__mockGrantMic("mock-demo123")
+// window.__mockRevokeMic("mock-demo123")
+if (typeof window !== "undefined") {
+  (window as unknown as Record<string, unknown>).__mockGrantMic = (classroomId: string) => {
+    mockState.micGranted.set(classroomId, true);
+    mockSseEmit(classroomId, "mic_granted");
+  };
+  (window as unknown as Record<string, unknown>).__mockRevokeMic = (classroomId: string) => {
+    mockState.micGranted.set(classroomId, false);
+    mockSseEmit(classroomId, "mic_revoked");
+  };
+}
+
+// Simple in-memory SSE emitter for mock mode
+const mockSseListeners = new Map<string, Set<(event: string) => void>>();
+
+function mockSseEmit(classroomId: string, event: string) {
+  const listeners = mockSseListeners.get(classroomId);
+  if (listeners) {
+    listeners.forEach((fn) => fn(event));
+  }
+}
 
 async function mockRequest<T>(method: string, path: string, _body?: unknown): Promise<T> {
   await new Promise((r) => setTimeout(r, 300));
+
   // Join: /classrooms/join/:token
   const joinMatch = path.match(/^\/classrooms\/join\/(.+)$/);
   if (joinMatch && method === "POST") {
     const joinToken = joinMatch[1];
     const classroomId = `mock-${joinToken}`;
-    // Treat token "ended" / "scheduled" as error states for UI testing.
     if (joinToken === "ended") {
       throw new ApiError("This class has ended", 400);
     }
@@ -105,19 +184,79 @@ async function mockRequest<T>(method: string, path: string, _body?: unknown): Pr
       throw new ApiError("Class has not started yet", 400);
     }
     return {
-      token: "", // empty -> room will fall back to demo mode
+      token: "",
       room_name: `room-${joinToken}`,
       classroom_id: classroomId,
       classroom_title: "Live Demo: Algebra Foundations",
       can_publish: mockState.micsOpen.get(classroomId) ?? false,
     } as T;
   }
+
   const micOpen = path.match(/^\/classrooms\/(.+)\/mic\/open$/);
-  if (micOpen) { mockState.micsOpen.set(micOpen[1], true); return { message: "ok" } as T; }
+  if (micOpen && method === "POST") {
+    mockState.micsOpen.set(micOpen[1], true);
+    return { message: "ok" } as T;
+  }
+
   const micClose = path.match(/^\/classrooms\/(.+)\/mic\/close$/);
-  if (micClose) { mockState.micsOpen.set(micClose[1], false); return { message: "ok" } as T; }
+  if (micClose && method === "POST") {
+    mockState.micsOpen.set(micClose[1], false);
+    return { message: "ok" } as T;
+  }
+
+  const micGrant = path.match(/^\/classrooms\/(.+)\/mic\/grant\/(.+)$/);
+  if (micGrant && method === "POST") {
+    mockState.micGranted.set(micGrant[1], true);
+    mockSseEmit(micGrant[1], "mic_granted");
+    return { message: "Mic granted", student_id: micGrant[2] } as T;
+  }
+
+  const micRevoke = path.match(/^\/classrooms\/(.+)\/mic\/revoke\/(.+)$/);
+  if (micRevoke && method === "POST") {
+    mockState.micGranted.set(micRevoke[1], false);
+    mockSseEmit(micRevoke[1], "mic_revoked");
+    return { message: "Mic revoked", student_id: micRevoke[2] } as T;
+  }
+
+  const micStatus = path.match(/^\/classrooms\/(.+)\/mic\/status$/);
+  if (micStatus && method === "GET") {
+    return [] as unknown as T;
+  }
+
+  const tokenRefresh = path.match(/^\/classrooms\/(.+)\/token\/refresh$/);
+  if (tokenRefresh && method === "GET") {
+    const classroomId = tokenRefresh[1];
+    const micGranted = mockState.micGranted.get(classroomId) ?? false;
+    const micOpen = mockState.micsOpen.get(classroomId) ?? false;
+    const canPublishAudio = micGranted || micOpen;
+    return {
+      token: "",
+      can_publish: canPublishAudio,
+      can_publish_audio: canPublishAudio,
+    } as T;
+  }
+
   if (path.endsWith("/leave") && method === "POST") return { message: "left" } as T;
   if (path.endsWith("/participants") && method === "GET") return [] as unknown as T;
-  // Default
+
   return {} as T;
+}
+
+/**
+ * Mock SSE subscription for demo mode.
+ * Returns an unsubscribe function.
+ * Usage: useMicPermissionSync will call getClassroomEventsUrl which returns null in mock mode,
+ * so this is only used if you want to test SSE manually via window.__mockGrantMic().
+ */
+export function subscribeMockSse(
+  classroomId: string,
+  onEvent: (event: string) => void
+): () => void {
+  if (!mockSseListeners.has(classroomId)) {
+    mockSseListeners.set(classroomId, new Set());
+  }
+  mockSseListeners.get(classroomId)!.add(onEvent);
+  return () => {
+    mockSseListeners.get(classroomId)?.delete(onEvent);
+  };
 }

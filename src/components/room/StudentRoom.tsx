@@ -1,6 +1,19 @@
+/**
+ * src/components/room/StudentRoom.tsx — updated
+ *
+ * Changes vs original:
+ *  1. Imports MicStatusBanner and renders it below the top bar.
+ *  2. Reads canPublish from localParticipant.permissions so the banner
+ *     always reflects the live LiveKit permission state.
+ *  3. useMicPermissionSync wired as before (now uses safer token-refresh flow).
+ */
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useLocalParticipant, useParticipants, useTracks } from "@livekit/components-react";
+import {
+  useLocalParticipant,
+  useParticipants,
+  useTracks,
+} from "@livekit/components-react";
 import { Track } from "livekit-client";
 import { MessageSquare, PhoneOff } from "lucide-react";
 import { LockedMicButton } from "./LockedMicButton";
@@ -8,6 +21,7 @@ import { ToolbarButton } from "./ToolbarButton";
 import { ChatPanel } from "./ChatPanel";
 import { ParticipantTile } from "./ParticipantTile";
 import { RoomTopBar } from "./RoomTopBar";
+import { MicStatusBanner } from "./Micstatusbanner";
 import { leaveClassroom } from "@/lib/api";
 import { useMicPermissionSync } from "@/hooks/usemicpermissionsync";
 import { toast } from "sonner";
@@ -23,18 +37,23 @@ export const StudentRoom = ({ classroomId, title }: Props) => {
   const { localParticipant } = useLocalParticipant();
   const [chatOpen, setChatOpen] = useState(false);
 
-  // Phase 4: Subscribe to SSE events so mic grant/revoke is instant
-  // without the student needing to manually poll or rejoin.
+  // Phase 4: SSE-based mic permission sync
   useMicPermissionSync({ classroomId, enabled: true });
 
-  // Ensure local participant tile renders even before any tracks publish
+  // canPublish reflects the current LiveKit token permissions
+  const canPublishAudio =
+    localParticipant?.permissions?.canPublishSources?.includes(Track.Source.Microphone) ??
+    localParticipant?.permissions?.canPublish ??
+    false;
+
   const sorted = [
     ...participants.filter((p) => p.identity === localParticipant?.identity),
     ...participants.filter((p) => p.identity !== localParticipant?.identity),
   ];
 
-  // touch tracks subscription so tiles update
-  useTracks([Track.Source.Camera, Track.Source.Microphone], { onlySubscribed: false });
+  useTracks([Track.Source.Camera, Track.Source.Microphone], {
+    onlySubscribed: false,
+  });
 
   const onLeave = async () => {
     try {
@@ -49,6 +68,9 @@ export const StudentRoom = ({ classroomId, title }: Props) => {
   return (
     <div className="room-dark flex h-screen w-full flex-col">
       <RoomTopBar title={title} onLeave={onLeave} />
+
+      {/* Mic status banner — always visible so students know their permission */}
+      <MicStatusBanner canPublishAudio={canPublishAudio} />
 
       <div className="flex flex-1 overflow-hidden">
         <main className="flex-1 overflow-auto p-4">
@@ -73,7 +95,11 @@ export const StudentRoom = ({ classroomId, title }: Props) => {
 
       <footer className="room-toolbar flex items-center justify-center gap-3 border-t border-[hsl(var(--room-tile-border))] px-4 py-3">
         <LockedMicButton />
-        <ToolbarButton onClick={() => setChatOpen((o) => !o)} active={chatOpen} label="Chat">
+        <ToolbarButton
+          onClick={() => setChatOpen((o) => !o)}
+          active={chatOpen}
+          label="Chat"
+        >
           <MessageSquare className="h-5 w-5" />
         </ToolbarButton>
         <ToolbarButton onClick={onLeave} variant="danger" label="Leave">

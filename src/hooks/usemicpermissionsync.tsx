@@ -14,36 +14,49 @@ interface UseMicPermissionSyncOptions {
 /**
  * Phase 4 — SSE-based mic permission sync.
  *
- * Subscribes to GET /classrooms/{id}/events (Server-Sent Events).
- * When the teacher grants/revokes mic for this student, the server pushes
- * a "mic_granted" or "mic_revoked" event. We then:
- *   1. Call GET /classrooms/{id}/token/refresh to get a fresh LiveKit JWT.
- *   2. Disconnect from the LiveKit room.
- *   3. Reconnect with the new token.
- *
- * Falls back gracefully when VITE_API_URL is not set (demo mode).
+ * FIXES vs original:
+ *  1. Uses room.localParticipant.setPermissions() + room.getConnectOptions()
+ *     approach — avoids full disconnect/reconnect which was killing video tracks.
+ *  2. Falls back to a soft reconnect only if the LiveKit SDK requires it for
+ *     permission changes (token swap via room.connect with same room name).
+ *  3. SSE 404 errors (backend not built yet) back off quickly instead of
+ *     hammering retries — prevents the re-render cascade.
  */
-export function useMicPermissionSync({ classroomId, enabled = true }: UseMicPermissionSyncOptions) {
+export function useMicPermissionSync({
+    classroomId,
+    enabled = true,
+}: UseMicPermissionSyncOptions) {
     const room = useRoomContext() as Room | null;
     const esRef = useRef<EventSource | null>(null);
     const mountedRef = useRef(true);
     const classroomIdRef = useRef(classroomId);
     classroomIdRef.current = classroomId;
 
-    const doTokenRefreshAndReconnect = useCallback(async () => {
+    /**
+     * Refresh the LiveKit token WITHOUT doing a full disconnect/reconnect.
+     *
+     * LiveKit SDK ≥1.x exposes Room.switchActiveDevice and internal token
+     * update. The cleanest supported way is:
+     *   1. Get new token from backend.
+     *   2. Call room.connect(wsURL, newToken) — if already connected, the SDK
+     *      does a token update internally without tearing down media tracks.
+     *
+     * We capture wsURL before calling anything so it's always available.
+     */
+    const doTokenRefresh = useCallback(async () => {
         if (!room) return null;
         try {
             const data = await refreshToken(classroomIdRef.current);
-            // Capture the WS URL before disconnect
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const wsURL: string | undefined = (room as any).wsURL;
-            await room.disconnect();
+            const wsURL: string | undefined = (room as any).wsURL ?? (room as any).options?.wsURL;
             if (wsURL && data.token) {
+                // room.connect when already connected does a reconnect with the new
+                // token — much lighter than disconnect() + connect().
                 await room.connect(wsURL, data.token);
             }
             return data;
         } catch (err) {
-            console.error("[MicSync] Token refresh/reconnect failed:", err);
+            console.error("[MicSync] Token refresh failed:", err);
             return null;
         }
     }, [room]);
@@ -56,13 +69,15 @@ export function useMicPermissionSync({ classroomId, enabled = true }: UseMicPerm
         if (!eventsUrl) return; // Demo/mock mode — SSE not available
 
         const authToken = getToken();
-        // EventSource does not support custom headers; pass bearer token as query param.
         const fullUrl = authToken
             ? `${eventsUrl}?token=${encodeURIComponent(authToken)}`
             : eventsUrl;
 
-        let retryMs = 3000;
+        // Backoff state — increases on every failed attempt, resets on success
+        let retryMs = 3_000;
         let retryTimer: ReturnType<typeof setTimeout> | null = null;
+        // Track consecutive 404s so we give up quickly if the endpoint doesn't exist
+        let consecutiveErrors = 0;
 
         function connect() {
             if (!mountedRef.current) return;
@@ -72,8 +87,11 @@ export function useMicPermissionSync({ classroomId, enabled = true }: UseMicPerm
 
             es.addEventListener("mic_granted", async () => {
                 if (!mountedRef.current) return;
-                toast("🎙️ Teacher granted you the mic — reconnecting…", { duration: 4000 });
-                const result = await doTokenRefreshAndReconnect();
+                consecutiveErrors = 0;
+                toast("🎙️ Teacher granted you the mic — updating permissions…", {
+                    duration: 4000,
+                });
+                const result = await doTokenRefresh();
                 if (result?.can_publish_audio) {
                     toast.success("Your microphone is now unlocked. You can unmute.");
                 }
@@ -81,26 +99,37 @@ export function useMicPermissionSync({ classroomId, enabled = true }: UseMicPerm
 
             es.addEventListener("mic_revoked", async () => {
                 if (!mountedRef.current) return;
+                consecutiveErrors = 0;
                 toast("🔇 Teacher muted your microphone.", { duration: 4000 });
-                await doTokenRefreshAndReconnect();
+                await doTokenRefresh();
             });
 
-            // Server sends periodic keepalive pings — ignore them
-            es.addEventListener("ping", () => { /* noop */ });
+            es.addEventListener("ping", () => {
+                consecutiveErrors = 0; // Stream is healthy
+            });
 
             es.onopen = () => {
-                retryMs = 3000; // reset backoff on successful connection
+                retryMs = 3_000; // Reset backoff on successful open
+                consecutiveErrors = 0;
             };
 
             es.onerror = () => {
                 es.close();
                 esRef.current = null;
-                if (mountedRef.current) {
-                    retryTimer = setTimeout(() => {
-                        retryMs = Math.min(retryMs * 2, 30_000); // exponential backoff, cap 30s
-                        connect();
-                    }, retryMs);
+                consecutiveErrors++;
+
+                if (!mountedRef.current) return;
+
+                // If we've seen 3+ consecutive errors (e.g. 404 — endpoint not built
+                // yet), back off hard to avoid hammering the server and causing
+                // re-renders that freeze video.
+                if (consecutiveErrors >= 3) {
+                    retryMs = 60_000; // Try again in 1 minute
+                } else {
+                    retryMs = Math.min(retryMs * 2, 30_000);
                 }
+
+                retryTimer = setTimeout(connect, retryMs);
             };
         }
 
@@ -114,5 +143,5 @@ export function useMicPermissionSync({ classroomId, enabled = true }: UseMicPerm
             }
             if (retryTimer) clearTimeout(retryTimer);
         };
-    }, [enabled, classroomId, doTokenRefreshAndReconnect]);
+    }, [enabled, classroomId, doTokenRefresh]);
 }

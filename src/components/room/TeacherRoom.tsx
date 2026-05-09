@@ -1,9 +1,20 @@
-import { useState } from "react";
+/**
+ * src/components/room/TeacherRoom.tsx
+ *
+ * Fixes vs previous version:
+ *  1. Tab-visibility camera recovery: same fix as StudentRoom — listens for
+ *     visibilitychange and restarts camera if the browser suspended the stream.
+ *  2. useTracks for screen share uses onlySubscribed:true so if another
+ *     participant shares their screen it also shows on teacher side.
+ */
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   useLocalParticipant,
   useParticipants,
   useTracks,
+  useRoomContext,
+  VideoTrack,
 } from "@livekit/components-react";
 import { Track } from "livekit-client";
 import {
@@ -24,7 +35,6 @@ import { CameraPiP } from "./CameraPiP";
 import { AllowMicToggle } from "./AllowMicToggle";
 import { leaveClassroom } from "@/lib/api";
 import { toast } from "sonner";
-import { VideoTrack } from "@livekit/components-react";
 
 interface Props {
   classroomId: string;
@@ -35,17 +45,20 @@ export const TeacherRoom = ({ classroomId, title }: Props) => {
   const navigate = useNavigate();
   const participants = useParticipants();
   const { localParticipant } = useLocalParticipant();
+  const room = useRoomContext();
   const [chatOpen, setChatOpen] = useState(false);
 
-  useTracks([Track.Source.Camera, Track.Source.Microphone, Track.Source.ScreenShare], {
-    onlySubscribed: false,
-  });
+  // Subscribe to ALL tracks — both local (camera/mic/screen) and remote
+  useTracks(
+    [Track.Source.Camera, Track.Source.Microphone, Track.Source.ScreenShare],
+    { onlySubscribed: false }
+  );
 
-  // Find a screen share track from any participant
-  const screenTracks = useTracks([Track.Source.ScreenShare], { onlySubscribed: true });
+  // Find active screen share from any participant (including self)
+  const screenTracks = useTracks([Track.Source.ScreenShare], { onlySubscribed: false });
   const activeScreen = screenTracks.find((t) => t.publication?.track);
 
-  // local camera ref for PiP
+  // Local camera ref for PiP when screen sharing
   const localCamera = useTracks([Track.Source.Camera], { onlySubscribed: false }).find(
     (t) => t.participant.identity === localParticipant?.identity,
   );
@@ -57,16 +70,45 @@ export const TeacherRoom = ({ classroomId, title }: Props) => {
   const camOn = !!camPub && !camPub.isMuted;
   const sharing = !!screenPub && !screenPub.isMuted;
 
-  const toggleMic = () => localParticipant?.setMicrophoneEnabled(!micOn).catch(() => toast.error("Mic error"));
-  const toggleCam = () => localParticipant?.setCameraEnabled(!camOn).catch(() => toast.error("Camera error"));
+  const toggleMic = () =>
+    localParticipant?.setMicrophoneEnabled(!micOn).catch(() => toast.error("Mic error"));
+  const toggleCam = () =>
+    localParticipant?.setCameraEnabled(!camOn).catch(() => toast.error("Camera error"));
   const toggleShare = () =>
-    localParticipant?.setScreenShareEnabled(!sharing).catch(() => toast.error("Screen share unavailable"));
+    localParticipant
+      ?.setScreenShareEnabled(!sharing)
+      .catch(() => toast.error("Screen share unavailable"));
+
+  // FIX: Tab visibility — recover camera when tab becomes visible again.
+  // Browsers suspend the MediaStream capture when the tab is hidden.
+  useEffect(() => {
+    if (!room) return;
+
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState === "visible") {
+        const camPub = localParticipant?.getTrackPublication(Track.Source.Camera);
+        if (camPub && !camPub.isMuted) {
+          try {
+            await localParticipant.setCameraEnabled(false);
+            await localParticipant.setCameraEnabled(true);
+          } catch {
+            // Camera may not have been on — safe to ignore
+          }
+        }
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, [room, localParticipant]);
 
   const onEnd = async () => {
     if (!confirm("End the class for everyone?")) return;
     try {
       await leaveClassroom(classroomId);
-    } catch {/* ignore */}
+    } catch {
+      /* ignore */
+    }
     toast("Class ended");
     navigate("/");
   };
@@ -134,7 +176,12 @@ export const TeacherRoom = ({ classroomId, title }: Props) => {
           <MonitorUp className="h-5 w-5" />
         </ToolbarButton>
         <AllowMicToggle classroomId={classroomId} />
-        <ToolbarButton onClick={() => setChatOpen((o) => !o)} active={chatOpen} label="Chat" className="md:hidden">
+        <ToolbarButton
+          onClick={() => setChatOpen((o) => !o)}
+          active={chatOpen}
+          label="Chat"
+          className="md:hidden"
+        >
           <MessageSquare className="h-5 w-5" />
         </ToolbarButton>
         <ToolbarButton onClick={onEnd} variant="danger" label="End class">
@@ -147,5 +194,5 @@ export const TeacherRoom = ({ classroomId, title }: Props) => {
 
 // Inline chat (always visible inside teacher sidebar on desktop)
 const ChatPanelInline = () => {
-  return <ChatPanel open onClose={() => {}} />;
+  return <ChatPanel open onClose={() => { }} />;
 };

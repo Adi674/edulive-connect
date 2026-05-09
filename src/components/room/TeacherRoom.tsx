@@ -151,7 +151,7 @@ export const TeacherRoom = ({ classroomId, title }: Props) => {
 
         <aside className="room-surface hidden w-72 flex-col border-l border-[hsl(var(--room-tile-border))] md:flex">
           <div className="flex-1 overflow-auto">
-            <ParticipantSidebar />
+            <ParticipantSidebar classroomId={classroomId} />
           </div>
           <div className="flex h-1/2 flex-col border-t border-[hsl(var(--room-tile-border))]">
             <ChatPanelInline />

@@ -10,14 +10,18 @@ export interface SessionUser {
 const TOKEN_KEY = "edulive_token";
 const USER_KEY = "edulive_user";
 
+// src/lib/auth.ts - Change localStorage to sessionStorage
 export function saveSession(token: string, user: SessionUser) {
-  localStorage.setItem(TOKEN_KEY, token);
-  localStorage.setItem(USER_KEY, JSON.stringify(user));
+  sessionStorage.setItem(TOKEN_KEY, token); // Unique to this tab
+  sessionStorage.setItem(USER_KEY, JSON.stringify(user));
 }
 
+
 export function getSession(): { token: string; user: SessionUser } | null {
-  const token = localStorage.getItem(TOKEN_KEY);
-  const userRaw = localStorage.getItem(USER_KEY);
+  // Fix: Changed from localStorage to sessionStorage
+  const token = sessionStorage.getItem(TOKEN_KEY);
+  const userRaw = sessionStorage.getItem(USER_KEY);
+
   if (!token || !userRaw) return null;
   try {
     return { token, user: JSON.parse(userRaw) as SessionUser };
@@ -27,8 +31,8 @@ export function getSession(): { token: string; user: SessionUser } | null {
 }
 
 export function clearSession() {
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(USER_KEY);
+  sessionStorage.removeItem(TOKEN_KEY);
+  sessionStorage.removeItem(USER_KEY);
 }
 
 export function getRole(): Role | null {
@@ -36,7 +40,7 @@ export function getRole(): Role | null {
 }
 
 export function getToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY);
+  return sessionStorage.getItem(TOKEN_KEY);
 }
 
 /** Dev helper: set a mock session so room flows are previewable without a backend. */

@@ -26,6 +26,9 @@ import { MicStatusBanner } from "./Micstatusbanner";
 import { leaveClassroom } from "@/lib/api";
 import { useMicPermissionSync } from "@/hooks/usemicpermissionsync";
 import { toast } from "sonner";
+import { ParticipantSidebar } from "./ParticipantSidebar";
+import { CameraPiP } from "./CameraPiP";
+import { Users } from "lucide-react";
 
 interface Props {
   classroomId: string;
@@ -38,6 +41,7 @@ export const StudentRoom = ({ classroomId, title }: Props) => {
   const { localParticipant } = useLocalParticipant();
   const room = useRoomContext();
   const [chatOpen, setChatOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useMicPermissionSync({ classroomId, enabled: true });
 
@@ -51,11 +55,13 @@ export const StudentRoom = ({ classroomId, title }: Props) => {
   );
 
   // Find active screen share from any remote participant
-  const screenTracks = useTracks([Track.Source.ScreenShare], { onlySubscribed: true });
-  const activeScreen = screenTracks.find(
-    (t) => t.publication?.track && !t.publication.isMuted
-  );
+  const cameraTracks = useTracks([Track.Source.Camera], { onlySubscribed: true });
+  const activeScreen = useTracks([Track.Source.ScreenShare], { onlySubscribed: true })
+    .find((t) => t.publication?.track && !t.publication.isMuted);
 
+  const teacherCamera = cameraTracks.find(
+    (t) => t.participant.identity === activeScreen?.participant.identity
+  );
   // Tab-visibility recovery: browser suspends MediaStream on hidden tabs.
   // On tab return, restart camera to clear the black frame.
   useEffect(() => {
@@ -95,6 +101,7 @@ export const StudentRoom = ({ classroomId, title }: Props) => {
           {activeScreen ? (
             <div className="h-full w-full overflow-hidden rounded-xl room-tile">
               <VideoTrack trackRef={activeScreen} className="h-full w-full object-contain" />
+              <CameraPiP trackRef={teacherCamera} />
             </div>
           ) : (
             <div className="grid auto-rows-fr grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -113,11 +120,23 @@ export const StudentRoom = ({ classroomId, title }: Props) => {
             </div>
           )}
         </main>
+        {sidebarOpen && (
+          <aside className="room-surface flex w-72 flex-col border-l border-[hsl(var(--room-tile-border))]">
+            <ParticipantSidebar />
+          </aside>
+        )}
         <ChatPanel open={chatOpen} onClose={() => setChatOpen(false)} />
       </div>
 
       <footer className="room-toolbar flex items-center justify-center gap-3 border-t border-[hsl(var(--room-tile-border))] px-4 py-3">
         <LockedMicButton />
+        <ToolbarButton
+          onClick={() => setSidebarOpen((o) => !o)}
+          active={sidebarOpen}
+          label="Participants"
+        >
+          <Users className="h-5 w-5" />
+        </ToolbarButton>
         <ToolbarButton onClick={() => setChatOpen((o) => !o)} active={chatOpen} label="Chat">
           <MessageSquare className="h-5 w-5" />
         </ToolbarButton>

@@ -25,6 +25,7 @@ import {
   MicOff,
   MonitorUp,
   PhoneOff,
+  Users,
 } from "lucide-react";
 import { ToolbarButton } from "./ToolbarButton";
 import { ChatPanel } from "./ChatPanel";
@@ -47,6 +48,7 @@ export const TeacherRoom = ({ classroomId, title }: Props) => {
   const { localParticipant } = useLocalParticipant();
   const room = useRoomContext();
   const [chatOpen, setChatOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // Subscribe to ALL tracks — both local (camera/mic/screen) and remote
   useTracks(
@@ -149,14 +151,11 @@ export const TeacherRoom = ({ classroomId, title }: Props) => {
           )}
         </main>
 
-        <aside className="room-surface hidden w-72 flex-col border-l border-[hsl(var(--room-tile-border))] md:flex">
-          <div className="flex-1 overflow-auto">
+        {sidebarOpen && (
+          <aside className="room-surface flex w-72 flex-col border-l border-[hsl(var(--room-tile-border))]">
             <ParticipantSidebar classroomId={classroomId} />
-          </div>
-          <div className="flex h-1/2 flex-col border-t border-[hsl(var(--room-tile-border))]">
-            <ChatPanelInline />
-          </div>
-        </aside>
+          </aside>
+        )}
 
         <ChatPanel open={chatOpen} onClose={() => setChatOpen(false)} />
       </div>
@@ -176,11 +175,25 @@ export const TeacherRoom = ({ classroomId, title }: Props) => {
           <MonitorUp className="h-5 w-5" />
         </ToolbarButton>
         <AllowMicToggle classroomId={classroomId} />
+
         <ToolbarButton
-          onClick={() => setChatOpen((o) => !o)}
+          onClick={() => {
+            setSidebarOpen(!sidebarOpen);
+            if (!sidebarOpen) setChatOpen(false); // Close chat if opening participants
+          }}
+          active={sidebarOpen}
+          label="Participants"
+        >
+          <Users className="h-5 w-5" />
+        </ToolbarButton>
+
+        <ToolbarButton
+          onClick={() => {
+            setChatOpen(!chatOpen);
+            if (!chatOpen) setSidebarOpen(false); // Close participants if opening chat
+          }}
           active={chatOpen}
           label="Chat"
-          className="md:hidden"
         >
           <MessageSquare className="h-5 w-5" />
         </ToolbarButton>

@@ -260,3 +260,143 @@ export function subscribeMockSse(
     mockSseListeners.get(classroomId)?.delete(onEvent);
   };
 }
+
+// ---------- Batch management (Phase 6) ----------
+
+export interface BatchOut {
+  id: string;
+  teacher_id: string;
+  name: string;
+  description: string | null;
+  batch_code: string;
+  created_at: string;
+}
+
+export interface BatchDetailOut extends BatchOut {
+  student_count: number;
+}
+
+export interface ClassroomOut {
+  id: string;
+  teacher_id: string;
+  batch_id: string;
+  title: string;
+  description: string | null;
+  room_name: string;
+  join_token: string;
+  status: "scheduled" | "live" | "ended";
+  scheduled_at: string | null;
+  started_at: string | null;
+  ended_at: string | null;
+  duration_minutes: number;
+  created_at: string;
+}
+
+export interface RecordingOut {
+  id: string;
+  classroom_id: string;
+  egress_id: string;
+  s3_key: string | null;
+  url: string | null;
+  status: "recording" | "completed" | "failed";
+  started_at: string;
+  ended_at: string | null;
+}
+
+export interface ClassroomDetailOut extends ClassroomOut {
+  recordings: RecordingOut[];
+}
+
+// Batch CRUD
+export const getTeacherBatches = () =>
+  api.get<BatchDetailOut[]>("/batches");
+
+export const getStudentBatches = () =>
+  api.get<BatchOut[]>("/batches/my");
+
+export const createBatch = (name: string, description?: string) =>
+  api.post<BatchOut>("/batches", { name, description });
+
+export const getBatch = (batchId: string) =>
+  api.get<BatchDetailOut>(`/batches/${batchId}`);
+
+export const joinBatch = (batchCode: string) =>
+  api.post<unknown>("/batches/join", { batch_code: batchCode });
+
+// Classroom listing
+export const getClassroomsForBatch = (batchId: string) =>
+  api.get<ClassroomOut[]>(`/classrooms/batch/${batchId}`);
+
+export const getClassroomDetail = (classroomId: string) =>
+  api.get<ClassroomDetailOut>(`/classrooms/${classroomId}/detail`);
+
+// Classroom creation (teacher)
+export const createClassroom = (
+  title: string,
+  batchId: string,
+  description?: string,
+  scheduledAt?: string,
+  durationMinutes?: number,
+) =>
+  api.post<ClassroomOut>("/classrooms", undefined,)  // query params below
+// NOTE: FastAPI classroom create uses query params, not body:
+// POST /classrooms?title=...&batch_id=...&description=...&scheduled_at=...&duration_minutes=...
+// Use the raw fetch below:
+
+// Raw helper for query-param POST (classroom creation)
+export async function createClassroomRaw(params: {
+  title: string;
+  batch_id: string;
+  description?: string;
+  scheduled_at?: string;
+  duration_minutes?: number;
+}): Promise<ClassroomOut> {
+  const token = getToken();
+  const qs = new URLSearchParams();
+  qs.set("title", params.title);
+  qs.set("batch_id", params.batch_id);
+  if (params.description) qs.set("description", params.description);
+  if (params.scheduled_at) qs.set("scheduled_at", params.scheduled_at);
+  if (params.duration_minutes) qs.set("duration_minutes", String(params.duration_minutes));
+
+  const API_URL = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, "");
+  if (!API_URL) throw new Error("No API_URL");
+
+  const res = await fetch(`${API_URL}/classrooms?${qs.toString()}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  });
+  const data = await res.json();
+  if (!res.ok) throw new ApiError(data?.detail || "Failed to create classroom", res.status);
+  return data as ClassroomOut;
+}
+
+export const startClass = (classroomId: string) =>
+  api.post<ClassroomOut>(`/classrooms/${classroomId}/start`);
+
+export const endClass = (classroomId: string) =>
+  api.post<ClassroomOut>(`/classrooms/${classroomId}/end`);
+
+// Recording controls
+export const startRecording = (classroomId: string) =>
+  api.post<RecordingOut>(`/classrooms/${classroomId}/recording/start`);
+
+export const stopRecording = (classroomId: string) =>
+  api.post<RecordingOut>(`/classrooms/${classroomId}/recording/stop`);
+
+export const getRecordings = (classroomId: string) =>
+  api.get<RecordingOut[]>(`/classrooms/${classroomId}/recordings`);
+
+export const getRecordingUrl = (recordingId: string) =>
+  api.get<{ url: string; expires_in_seconds: number }>(
+    `/classrooms/recordings/${recordingId}/url`
+  );
+
+// Enrolled students (teacher view)
+export const getEnrolledStudents = (batchId: string) =>
+  api.get<Array<{ id: string; name: string; email: string; role: string; enrolled_at: string; enrolled_via: string }>>(
+    `/batches/${batchId}/students`
+  );

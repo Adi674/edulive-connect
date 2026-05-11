@@ -122,7 +122,7 @@ export const StudentRoom = ({ classroomId, title }: Props) => {
         </main>
         {sidebarOpen && (
           <aside className="room-surface flex w-72 flex-col border-l border-[hsl(var(--room-tile-border))]">
-            <ParticipantSidebar />
+            <ParticipantSidebar classroomId={classroomId} />
           </aside>
         )}
         <ChatPanel open={chatOpen} onClose={() => setChatOpen(false)} />

@@ -84,7 +84,13 @@ const DashboardPage = () => {
             Logged in as {user.name} · <span className="capitalize">{user.role}</span>
           </p>
         </div>
-
+        <Card className="rounded-xl">
+          <CardContent className="p-4">
+            <Link to="/batches">
+              <Button className="w-full sm:w-auto">My Batches</Button>
+            </Link>
+          </CardContent>
+        </Card>
         <Card className="rounded-xl">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-lg">

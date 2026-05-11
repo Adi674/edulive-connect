@@ -330,18 +330,6 @@ export const getClassroomsForBatch = (batchId: string) =>
 export const getClassroomDetail = (classroomId: string) =>
   api.get<ClassroomDetailOut>(`/classrooms/${classroomId}/detail`);
 
-// Classroom creation (teacher)
-export const createClassroom = (
-  title: string,
-  batchId: string,
-  description?: string,
-  scheduledAt?: string,
-  durationMinutes?: number,
-) =>
-  api.post<ClassroomOut>("/classrooms", undefined,)  // query params below
-// NOTE: FastAPI classroom create uses query params, not body:
-// POST /classrooms?title=...&batch_id=...&description=...&scheduled_at=...&duration_minutes=...
-// Use the raw fetch below:
 
 // Raw helper for query-param POST (classroom creation)
 export async function createClassroomRaw(params: {

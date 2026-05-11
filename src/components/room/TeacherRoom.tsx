@@ -34,9 +34,9 @@ import { ParticipantSidebar } from "./ParticipantSidebar";
 import { RoomTopBar } from "./RoomTopBar";
 import { CameraPiP } from "./CameraPiP";
 import { AllowMicToggle } from "./AllowMicToggle";
-import { leaveClassroom } from "@/lib/api";
+import { leaveClassroom, endClass } from "@/lib/api";
 import { toast } from "sonner";
-
+import { RecordingButton } from "./RecordingButton";
 interface Props {
   classroomId: string;
   title: string;
@@ -107,12 +107,18 @@ export const TeacherRoom = ({ classroomId, title }: Props) => {
   const onEnd = async () => {
     if (!confirm("End the class for everyone?")) return;
     try {
-      await leaveClassroom(classroomId);
-    } catch {
-      /* ignore */
-    }
+      await endClass(classroomId);
+    } catch { /* ignore */ }
     toast("Class ended");
-    navigate("/");
+    navigate("/batches");
+  };
+
+  const onLeave = async () => {
+    try {
+      await leaveClassroom(classroomId);
+    } catch { /* ignore */ }
+    toast("You left the class");
+    navigate("/batches");
   };
 
   const sorted = [
@@ -175,6 +181,8 @@ export const TeacherRoom = ({ classroomId, title }: Props) => {
           <MonitorUp className="h-5 w-5" />
         </ToolbarButton>
         <AllowMicToggle classroomId={classroomId} />
+        <RecordingButton classroomId={classroomId} />
+
 
         <ToolbarButton
           onClick={() => {
@@ -197,7 +205,7 @@ export const TeacherRoom = ({ classroomId, title }: Props) => {
         >
           <MessageSquare className="h-5 w-5" />
         </ToolbarButton>
-        <ToolbarButton onClick={onEnd} variant="danger" label="End class">
+        <ToolbarButton onClick={onLeave} variant="danger" label="End class">
           <PhoneOff className="h-5 w-5" />
         </ToolbarButton>
       </footer>

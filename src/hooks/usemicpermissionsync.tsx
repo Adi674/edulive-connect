@@ -47,11 +47,11 @@ export function useMicPermissionSync({
         if (!room) return null;
         try {
             const data = await refreshToken(classroomIdRef.current);
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const wsURL: string | undefined = (room as any).wsURL ?? (room as any).options?.wsURL;
+
+            // Get wsURL from env directly — room object doesn't reliably expose it
+            const wsURL = import.meta.env.VITE_LIVEKIT_URL as string | undefined;
+
             if (wsURL && data.token) {
-                // room.connect when already connected does a reconnect with the new
-                // token — much lighter than disconnect() + connect().
                 await room.connect(wsURL, data.token);
             }
             return data;
@@ -88,9 +88,7 @@ export function useMicPermissionSync({
             es.addEventListener("mic_granted", async () => {
                 if (!mountedRef.current) return;
                 consecutiveErrors = 0;
-                toast("🎙️ Teacher granted you the mic — updating permissions…", {
-                    duration: 4000,
-                });
+                toast("🎙️ Updating mic permissions…", { duration: 2000 });
                 const result = await doTokenRefresh();
                 if (result?.can_publish_audio) {
                     toast.success("Your microphone is now unlocked. You can unmute.");

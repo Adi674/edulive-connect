@@ -53,8 +53,11 @@ export function useMicPermissionSync({
         if (!room) return null;
         try {
             const data = await refreshToken(classroomIdRef.current);
-            // Token is refreshed for future use (e.g. reconnect after expiry)
-            // but we do NOT call room.connect() here — that kills the connection.
+            if (data?.token) {
+                // FIX: Ensure the new token is saved where getToken() reads it from
+                // (Typically localStorage or your auth state manager)
+                sessionStorage.setItem("active_room_token", data.token);
+            }
             return data;
         } catch (err) {
             console.error("[MicSync] Token refresh failed:", err);

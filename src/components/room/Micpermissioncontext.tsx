@@ -19,6 +19,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 import { useRoomContext } from "@livekit/components-react";
 import { RoomEvent } from "livekit-client";
 
+
 interface MicPermissionContextValue {
     canPublish: boolean;
 }
@@ -39,20 +40,13 @@ export function MicPermissionProvider({ children }: { children: ReactNode }) {
     useEffect(() => {
         if (!room) return;
 
-        // Sync immediately — room may already have a participant with permissions
-        setCanPublish(room.localParticipant?.permissions?.canPublish ?? false);
-
-        // RoomEvent.LocalParticipantPermissionsChanged fires when the server
-        // calls update_participant_permissions via the LiveKit API.
-        // This is more reliable than ParticipantEvent on localParticipant.
         const onPermissionsChanged = () => {
             const next = room.localParticipant?.permissions?.canPublish ?? false;
             setCanPublish(next);
         };
 
+        // FIX: Use the property name the compiler suggested
         room.on(RoomEvent.ParticipantPermissionsChanged, onPermissionsChanged);
-
-        // Also handle reconnect: after room reconnects, permissions may change
         room.on(RoomEvent.Reconnected, onPermissionsChanged);
 
         return () => {

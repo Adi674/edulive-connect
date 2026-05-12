@@ -1,21 +1,25 @@
 /**
- * src/components/room/MicStatusBanner.tsx
+ * src/components/room/Micstatusbanner.tsx
  *
- * Shown inside StudentRoom below the top bar.
- * Displays the current mic permission state so students always know
- * whether they can speak without having to guess from the locked mic icon.
- *
- * Props:
- *  canPublishAudio — derived from the LiveKit local participant's permissions.
+ * Now reads canPublishAudio from MicPermissionContext instead of props,
+ * so it updates instantly when server pushes permission changes.
+ * The prop variant is kept for backwards compat but context takes priority
+ * when available.
  */
 import { Mic, MicOff } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useMicPermission } from "./Micpermissioncontext";
 
 interface Props {
-    canPublishAudio: boolean;
+    /** Kept for backwards compat — context value takes priority */
+    canPublishAudio?: boolean;
 }
 
-export const MicStatusBanner = ({ canPublishAudio }: Props) => {
+export const MicStatusBanner = ({ canPublishAudio: propValue }: Props) => {
+    // Context value is always up-to-date; fall back to prop if context unavailable
+    const { canPublish } = useMicPermission();
+    const canPublishAudio = canPublish ?? propValue ?? false;
+
     return (
         <div
             className={cn(

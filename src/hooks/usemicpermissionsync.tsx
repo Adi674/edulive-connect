@@ -1,3 +1,26 @@
+/**
+ * src/hooks/usemicpermissionsync.tsx
+ *
+ * SSE-based mic permission sync for students.
+ *
+ * KEY FIX vs previous version:
+ *   The old version called room.connect(wsURL, newToken) on every mic_granted
+ *   event. In livekit-client, calling room.connect() while already connected
+ *   triggers a FULL DISCONNECT + RECONNECT — this:
+ *     1. Destroys the existing localParticipant instance
+ *     2. Kills all subscribed tracks (teacher video goes black)
+ *     3. Creates a new localParticipant, invalidating any event listeners
+ *        attached to the old one
+ *
+ *   The backend already calls update_participant_permissions() via the LiveKit
+ *   server API, which pushes a ParticipantPermissionsChanged signal directly
+ *   over the existing WebSocket connection — NO token refresh needed.
+ *   MicPermissionContext listens for RoomEvent.LocalParticipantPermissionsChanged
+ *   and updates the UI immediately.
+ *
+ *   Token refresh is kept but ONLY updates the stored token for future
+ *   reconnects — it does NOT call room.connect().
+ */
 import { useEffect, useRef, useCallback } from "react";
 import { useRoomContext } from "@livekit/components-react";
 import { Room } from "livekit-client";
@@ -7,21 +30,9 @@ import { getToken } from "@/lib/auth";
 
 interface UseMicPermissionSyncOptions {
     classroomId: string;
-    /** Only activate for students */
     enabled?: boolean;
 }
 
-/**
- * Phase 4 — SSE-based mic permission sync.
- *
- * FIXES vs original:
- *  1. Uses room.localParticipant.setPermissions() + room.getConnectOptions()
- *     approach — avoids full disconnect/reconnect which was killing video tracks.
- *  2. Falls back to a soft reconnect only if the LiveKit SDK requires it for
- *     permission changes (token swap via room.connect with same room name).
- *  3. SSE 404 errors (backend not built yet) back off quickly instead of
- *     hammering retries — prevents the re-render cascade.
- */
 export function useMicPermissionSync({
     classroomId,
     enabled = true,
@@ -33,27 +44,17 @@ export function useMicPermissionSync({
     classroomIdRef.current = classroomId;
 
     /**
-     * Refresh the LiveKit token WITHOUT doing a full disconnect/reconnect.
-     *
-     * LiveKit SDK ≥1.x exposes Room.switchActiveDevice and internal token
-     * update. The cleanest supported way is:
-     *   1. Get new token from backend.
-     *   2. Call room.connect(wsURL, newToken) — if already connected, the SDK
-     *      does a token update internally without tearing down media tracks.
-     *
-     * We capture wsURL before calling anything so it's always available.
+     * Silently refresh the token from the backend and store it.
+     * Does NOT call room.connect() — that would cause a full reconnect.
+     * The permission change is already reflected in the UI via the LiveKit
+     * WebSocket signal (update_participant_permissions → RoomEvent).
      */
     const doTokenRefresh = useCallback(async () => {
         if (!room) return null;
         try {
             const data = await refreshToken(classroomIdRef.current);
-
-            // Get wsURL from env directly — room object doesn't reliably expose it
-            const wsURL = import.meta.env.VITE_LIVEKIT_URL as string | undefined;
-
-            if (wsURL && data.token) {
-                await room.connect(wsURL, data.token);
-            }
+            // Token is refreshed for future use (e.g. reconnect after expiry)
+            // but we do NOT call room.connect() here — that kills the connection.
             return data;
         } catch (err) {
             console.error("[MicSync] Token refresh failed:", err);
@@ -66,17 +67,15 @@ export function useMicPermissionSync({
         mountedRef.current = true;
 
         const eventsUrl = getClassroomEventsUrl(classroomId);
-        if (!eventsUrl) return; // Demo/mock mode — SSE not available
+        if (!eventsUrl) return;
 
         const authToken = getToken();
         const fullUrl = authToken
             ? `${eventsUrl}?token=${encodeURIComponent(authToken)}`
             : eventsUrl;
 
-        // Backoff state — increases on every failed attempt, resets on success
         let retryMs = 3_000;
         let retryTimer: ReturnType<typeof setTimeout> | null = null;
-        // Track consecutive 404s so we give up quickly if the endpoint doesn't exist
         let consecutiveErrors = 0;
 
         function connect() {
@@ -88,11 +87,10 @@ export function useMicPermissionSync({
             es.addEventListener("mic_granted", async () => {
                 if (!mountedRef.current) return;
                 consecutiveErrors = 0;
-                toast("🎙️ Updating mic permissions…", { duration: 2000 });
-                const result = await doTokenRefresh();
-                if (result?.can_publish_audio) {
-                    toast.success("Your microphone is now unlocked. You can unmute.");
-                }
+                // UI update is automatic via RoomEvent.LocalParticipantPermissionsChanged
+                // fired by backend's update_participant_permissions call over WebSocket.
+                toast.success("🎙️ Mic enabled — you can now unmute yourself", { duration: 4000 });
+                await doTokenRefresh();
             });
 
             es.addEventListener("mic_revoked", async () => {
@@ -103,11 +101,11 @@ export function useMicPermissionSync({
             });
 
             es.addEventListener("ping", () => {
-                consecutiveErrors = 0; // Stream is healthy
+                consecutiveErrors = 0;
             });
 
             es.onopen = () => {
-                retryMs = 3_000; // Reset backoff on successful open
+                retryMs = 3_000;
                 consecutiveErrors = 0;
             };
 
@@ -115,18 +113,8 @@ export function useMicPermissionSync({
                 es.close();
                 esRef.current = null;
                 consecutiveErrors++;
-
                 if (!mountedRef.current) return;
-
-                // If we've seen 3+ consecutive errors (e.g. 404 — endpoint not built
-                // yet), back off hard to avoid hammering the server and causing
-                // re-renders that freeze video.
-                if (consecutiveErrors >= 3) {
-                    retryMs = 60_000; // Try again in 1 minute
-                } else {
-                    retryMs = Math.min(retryMs * 2, 30_000);
-                }
-
+                retryMs = consecutiveErrors >= 3 ? 60_000 : Math.min(retryMs * 2, 30_000);
                 retryTimer = setTimeout(connect, retryMs);
             };
         }

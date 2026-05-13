@@ -383,6 +383,11 @@ export const getRecordingUrl = (recordingId: string) =>
     `/classrooms/recordings/${recordingId}/url`
   );
 
+export const getMyMicState = (classroomId: string) =>
+  api.get<{ can_publish: boolean; mic_open: boolean; mic_individually_granted: boolean }>(
+    `/classrooms/${classroomId}/mic/my-state`
+  );
+
 // Enrolled students (teacher view)
 export const getEnrolledStudents = (batchId: string) =>
   api.get<Array<{ id: string; name: string; email: string; role: string; enrolled_at: string; enrolled_via: string }>>(

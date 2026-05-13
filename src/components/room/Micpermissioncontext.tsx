@@ -1,24 +1,9 @@
-/**
- * src/components/room/MicPermissionContext.tsx
- *
- * Single source of truth for the student's mic permission state.
- *
- * Why this exists:
- *   - useLocalParticipant() re-renders don't reliably fire when the server
- *     pushes ParticipantPermissionsChanged via WebSocket.
- *   - Multiple components need the same canPublish value (LockedMicButton,
- *     MicStatusBanner) — they must all update atomically.
- *   - We listen on RoomEvent.LocalParticipantPermissionsChanged on the Room
- *     object (not on localParticipant) which is the most reliable event source.
- *
- * Usage:
- *   Wrap StudentRoom children with <MicPermissionProvider>.
- *   Consume with useMicPermission() in any child component.
- */
+// src/components/room/Micpermissioncontext.tsx
+
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { useRoomContext } from "@livekit/components-react";
-import { RoomEvent } from "livekit-client";
-
+import { RoomEvent, type LocalParticipant, type RemoteParticipant } from "livekit-client";
+import { getMyMicState } from "@/lib/api";
 
 interface MicPermissionContextValue {
     canPublish: boolean;
@@ -30,30 +15,68 @@ export function useMicPermission() {
     return useContext(MicPermissionContext);
 }
 
-export function MicPermissionProvider({ children }: { children: ReactNode }) {
+export function MicPermissionProvider({
+    children,
+    classroomId,  // ← add this prop
+}: {
+    children: ReactNode;
+    classroomId: string;
+}) {
     const room = useRoomContext();
 
-    const [canPublish, setCanPublish] = useState<boolean>(
-        room?.localParticipant?.permissions?.canPublish ?? false
-    );
+    // Start with false — we'll fetch the real state immediately
+    const [canPublish, setCanPublish] = useState<boolean>(false);
 
+    // On mount: fetch real mic state from Redis via backend.
+    // This is the source of truth — don't trust LiveKit's initial
+    // permissions object which may reflect stale cached state.
+    useEffect(() => {
+        let cancelled = false;
+        const fetchInitialState = async () => {
+            try {
+                const state = await getMyMicState(classroomId);
+                if (!cancelled) {
+                    setCanPublish(state.can_publish);
+                }
+            } catch {
+                // fallback: read from LiveKit participant if API fails
+                if (!cancelled) {
+                    setCanPublish(room?.localParticipant?.permissions?.canPublish ?? false);
+                }
+            }
+        };
+        fetchInitialState();
+        return () => { cancelled = true; };
+    }, [classroomId, room]);
+
+    // After mount: keep in sync via LiveKit WebSocket events (for changes)
     useEffect(() => {
         if (!room) return;
 
-        const onPermissionsChanged = () => {
-            const next = room.localParticipant?.permissions?.canPublish ?? false;
+        const onPermissionsChanged = (
+            _prev: unknown,
+            participant: LocalParticipant | RemoteParticipant
+        ) => {
+            if (participant.sid !== room.localParticipant?.sid) return;
+            const next = participant.permissions?.canPublish ?? false;
             setCanPublish(next);
         };
 
-        // FIX: Use the property name the compiler suggested
-        room.on(RoomEvent.ParticipantPermissionsChanged, onPermissionsChanged);
-        room.on(RoomEvent.Reconnected, onPermissionsChanged);
+        const onReconnected = () => {
+            // Re-fetch from backend on reconnect — LiveKit state may be stale
+            getMyMicState(classroomId)
+                .then(s => setCanPublish(s.can_publish))
+                .catch(() => setCanPublish(room.localParticipant?.permissions?.canPublish ?? false));
+        };
+
+        room.on(RoomEvent.ParticipantPermissionsChanged, onPermissionsChanged as never);
+        room.on(RoomEvent.Reconnected, onReconnected);
 
         return () => {
-            room.off(RoomEvent.ParticipantPermissionsChanged, onPermissionsChanged);
-            room.off(RoomEvent.Reconnected, onPermissionsChanged);
+            room.off(RoomEvent.ParticipantPermissionsChanged, onPermissionsChanged as never);
+            room.off(RoomEvent.Reconnected, onReconnected);
         };
-    }, [room]);
+    }, [room, classroomId]);
 
     return (
         <MicPermissionContext.Provider value={{ canPublish }}>

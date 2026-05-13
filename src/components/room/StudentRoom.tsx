@@ -14,6 +14,7 @@ import {
   useTracks,
   useRoomContext,
   VideoTrack,
+  useParticipantPermissions,
 } from "@livekit/components-react";
 import { Track } from "livekit-client";
 import { MessageSquare, PhoneOff, Users } from "lucide-react";
@@ -89,7 +90,7 @@ export const StudentRoom = ({ classroomId, title }: Props) => {
   return (
     // MicPermissionProvider listens to RoomEvent.LocalParticipantPermissionsChanged
     // and provides canPublish to all child components reactively.
-    <MicPermissionProvider>
+    <MicPermissionProvider classroomId={classroomId}>
       <div className="room-dark flex h-screen w-full flex-col">
         <RoomTopBar title={title} onLeave={onLeave} />
 

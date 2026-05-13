@@ -10,7 +10,7 @@ import { useLocalParticipant } from "@livekit/components-react";
 import { Track } from "livekit-client";
 import { toast } from "sonner";
 import { ToolbarButton } from "./ToolbarButton";
-import { useMicPermission } from "./Micpermissioncontext";
+import { useMicPermission } from "@/components/room/Micpermissioncontext";
 
 export const LockedMicButton = () => {
   const { localParticipant } = useLocalParticipant();

@@ -21,12 +21,11 @@
  *   Token refresh is kept but ONLY updates the stored token for future
  *   reconnects — it does NOT call room.connect().
  */
-import { useEffect, useRef, useCallback } from "react";
-import { useRoomContext } from "@livekit/components-react";
-import { Room } from "livekit-client";
+import { useEffect, useRef } from "react";
 import { toast } from "sonner";
-import { refreshToken, getClassroomEventsUrl } from "@/lib/api";
+import { getClassroomEventsUrl } from "@/lib/api";
 import { getToken } from "@/lib/auth";
+import { useMicPermission } from "@/components/room/Micpermissioncontext";
 
 interface UseMicPermissionSyncOptions {
     classroomId: string;
@@ -37,11 +36,12 @@ export function useMicPermissionSync({
     classroomId,
     enabled = true,
 }: UseMicPermissionSyncOptions) {
-    const room = useRoomContext() as Room | null;
     const esRef = useRef<EventSource | null>(null);
     const mountedRef = useRef(true);
     const classroomIdRef = useRef(classroomId);
     classroomIdRef.current = classroomId;
+
+    const { refresh } = useMicPermission();
 
     /**
      * Silently refresh the token from the backend and store it.
@@ -49,21 +49,6 @@ export function useMicPermissionSync({
      * The permission change is already reflected in the UI via the LiveKit
      * WebSocket signal (update_participant_permissions → RoomEvent).
      */
-    const doTokenRefresh = useCallback(async () => {
-        if (!room) return null;
-        try {
-            const data = await refreshToken(classroomIdRef.current);
-            if (data?.token) {
-                // FIX: Ensure the new token is saved where getToken() reads it from
-                // (Typically localStorage or your auth state manager)
-                sessionStorage.setItem("active_room_token", data.token);
-            }
-            return data;
-        } catch (err) {
-            console.error("[MicSync] Token refresh failed:", err);
-            return null;
-        }
-    }, [room]);
 
     useEffect(() => {
         if (!enabled || !classroomId) return;
@@ -87,20 +72,18 @@ export function useMicPermissionSync({
             const es = new EventSource(fullUrl);
             esRef.current = es;
 
-            es.addEventListener("mic_granted", async () => {
+            es.addEventListener("mic_granted", () => {
                 if (!mountedRef.current) return;
                 consecutiveErrors = 0;
-                // UI update is automatic via RoomEvent.LocalParticipantPermissionsChanged
-                // fired by backend's update_participant_permissions call over WebSocket.
                 toast.success("🎙️ Mic enabled — you can now unmute yourself", { duration: 4000 });
-                await doTokenRefresh();
+                refresh();
             });
 
-            es.addEventListener("mic_revoked", async () => {
+            es.addEventListener("mic_revoked", () => {
                 if (!mountedRef.current) return;
                 consecutiveErrors = 0;
                 toast("🔇 Teacher muted your microphone.", { duration: 4000 });
-                await doTokenRefresh();
+                refresh();
             });
 
             es.addEventListener("ping", () => {
@@ -121,7 +104,6 @@ export function useMicPermissionSync({
                 retryTimer = setTimeout(connect, retryMs);
             };
         }
-
         connect();
 
         return () => {
@@ -132,5 +114,5 @@ export function useMicPermissionSync({
             }
             if (retryTimer) clearTimeout(retryTimer);
         };
-    }, [enabled, classroomId, doTokenRefresh]);
+    }, [enabled, classroomId, refresh]);
 }
